@@ -376,7 +376,7 @@ mod tests {
                 xsi = unif.sample(&mut rng);
                 data[j].push(xsi);
             }
-            debug!("j : {:?}, data : {:?} ", j, &data[j]);
+            debug!("j : {:?}, data : {:?} ", j, data[j]);
         }
         // define hnsw
         let ef_construct = 25;
@@ -440,7 +440,7 @@ mod tests {
                 xsi = unif.sample(&mut rng);
                 data[j].push(xsi);
             }
-            debug!("j : {:?}, data : {:?} ", j, &data[j]);
+            debug!("j : {:?}, data : {:?} ", j, data[j]);
         }
         // define hnsw
         let ef_construct = 25;
