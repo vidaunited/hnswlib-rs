@@ -9,7 +9,7 @@ keywords = ["algorithms", "ann", "hnsw"]
 repository = "https://github.com/jean-pierreBoth/hnswlib-rs"
 documentation = "https://docs.rs/hnsw_rs"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.89"
 
 
 # declare a feature with no dependancy to get some modulated debug print
