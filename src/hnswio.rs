@@ -365,7 +365,7 @@ impl HnswIo {
     //
     fn init(&self) -> Result<LoadInit> {
         //
-        info!("reloading from basename : {}", &self.basename);
+        info!("reloading from basename : {}", self.basename);
         //
         let mut graphname = self.basename.clone();
         graphname.push_str(".hnsw.graph");
@@ -1099,6 +1099,12 @@ fn dump_point<T: Serialize + Clone + Sized + Send + Sync, W: Write>(
     let origin_u64 = point.get_origin_id() as u64;
     dataout.write_all(&origin_u64.to_ne_bytes())?;
     //
+    // SAFETY: `point.get_v()` is a valid, fully initialized `&[T]`; viewing the
+    // same memory as `size_of_val` bytes stays inside that allocation and lifetime,
+    // and `u8` has alignment 1 so no alignment requirement can be violated. The
+    // dump format stores the raw native-endian bytes of `T`, which is only
+    // meaningful for plain-old-data element types (the numeric types this crate
+    // is built for); a `T` with padding or non-POD fields must not be dumped.
     let serialized = unsafe {
         std::slice::from_raw_parts(
             point.get_v().as_ptr() as *const u8,
@@ -1158,12 +1164,7 @@ where
                 error!("format bincode of dump no more used");
                 std::process::exit(1);
             }
-            3 | 4 => {
-                let slice_t = unsafe {
-                    std::slice::from_raw_parts(v_serialized.as_ptr() as *const T, descr.dimension)
-                };
-                slice_t.to_vec()
-            }
+            3 | 4 => bytes_to_vec::<T>(&v_serialized, descr.dimension)?,
             _ => {
                 error!(
                     "error in load_point, unknow format_version : {:?}",
@@ -1178,6 +1179,42 @@ where
     //
     Ok(v)
 } // end of load_point_data
+
+/// Decodes `dim` values of `T` stored as raw native-endian bytes (the layout
+/// written by `dump_point`) into an owned `Vec<T>`.
+///
+/// The byte buffer comes from a `Vec<u8>` or an mmap and therefore only carries
+/// a 1-byte alignment guarantee, so it must never be reinterpreted in place as
+/// `&[T]`; the bytes are copied into a properly aligned `Vec<T>` instead.
+/// `T` must be a plain-old-data type for which every byte pattern is a valid
+/// value, which is what the on-disk format assumes (see `dump_point`).
+pub(crate) fn bytes_to_vec<T>(bytes: &[u8], dim: usize) -> anyhow::Result<Vec<T>> {
+    let needed = dim
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| anyhow!("dimension {} overflows for {}", dim, type_name::<T>()))?;
+    if bytes.len() < needed {
+        return Err(anyhow!(
+            "serialized data too short: {} bytes, {} needed for {} values of {}",
+            bytes.len(),
+            needed,
+            dim,
+            type_name::<T>()
+        ));
+    }
+    let mut values: Vec<T> = Vec::with_capacity(dim);
+    // SAFETY: `values` owns an allocation of at least `dim * size_of::<T>()` bytes
+    // that is correctly aligned for `T` (it was allocated by `Vec<T>`), and `bytes`
+    // holds at least `needed` readable bytes (checked above). The two regions
+    // belong to different allocations, so they cannot overlap. After the copy the
+    // first `dim` elements are initialized with the bit patterns produced by
+    // `dump_point`, which are valid `T` values for the plain-old-data element types
+    // this format is defined for, so `set_len(dim)` is sound.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), values.as_mut_ptr() as *mut u8, needed);
+        values.set_len(dim);
+    }
+    Ok(values)
+}
 
 // We need to maintain coherence in data and graph stream, so we read to keep in phase
 fn skip_point_data(origin_id: usize, data_in: &mut dyn Read, _descr: &Description) -> Result<()> {

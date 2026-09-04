@@ -9,6 +9,7 @@ keywords = ["algorithms", "ann", "hnsw"]
 repository = "https://github.com/jean-pierreBoth/hnswlib-rs"
 documentation = "https://docs.rs/hnsw_rs"
 edition = "2024"
+rust-version = "1.89"
 
 
 # declare a feature with no dependancy to get some modulated debug print
@@ -34,15 +35,18 @@ path = "examples/random.rs"
 [[example]]
 name = "ann-glove"
 path = "examples/ann-glove25-angular.rs"
+required-features = ["hdf5"]
 
 
 [[example]]
 name = "ann-mnist"
 path = "examples/ann-mnist-784-euclidean.rs"
+required-features = ["hdf5"]
 
 [[example]]
 name = "ann-sift1m"
 path = "examples/ann-sift1m-128-euclidean.rs"
+required-features = ["hdf5"]
 
 [[example]]
 name = "levenshtein"
@@ -89,11 +93,14 @@ anyhow = { version = "1.0" }
 anndists = { version = "0.1" }
 # anndists = { git = "https://github.com/jean-pierreBoth/anndists" }
 
+# Only used by the ann-* examples (see the `hdf5` feature below). It needs a
+# system libhdf5, so it is optional and off by default: the library itself
+# never depends on it.
+# metno is needed as hdf5 is blocked to hdfsys 1.12
+hdf5 = { package = "hdf5-metno", version = "0.12", optional = true }
+
 # for benchmark reading, so the lbrary do not depend on hdf5 nor ndarray
 [dev-dependencies]
-# hdf5 = { version = "0.8" }
-# metno is needed as hdf5 is blocked to hdfsys 1.12
-hdf5 = {package = "hdf5-metno", version = "0.12" }
 
 ndarray = { version = ">=0.16.0, <0.18" }
 skiplist = { version = "1.1" }
@@ -103,6 +110,10 @@ itertools = {version = "0.14"}
 [features]
 
 default = []
+
+# enables the ann-benchmarks hdf5 readers used by the ann-* examples
+# (requires libhdf5 on the system): cargo build --examples --features hdf5
+hdf5 = ["dep:hdf5"]
 
 # feature for std simd on nightly
 stdsimd = ["anndists/stdsimd"]

@@ -94,29 +94,35 @@ impl DataMap {
         //
         let meta = std::fs::metadata(&datapath);
         if meta.is_err() {
-            error!("Could not open file : {:?}", &datapath);
+            error!("Could not open file : {:?}", datapath);
             std::process::exit(1);
         }
         let fsize = meta.unwrap().len().try_into().unwrap();
         //
         let file_res = File::open(&datapath);
         if file_res.is_err() {
-            error!("Could not open file : {:?}", &datapath);
+            error!("Could not open file : {:?}", datapath);
             std::process::exit(1);
         }
         let file = file_res.unwrap();
         let offset = 0;
         //
         let mmap_opt = MmapOptions::new(fsize).unwrap();
+        // SAFETY: `with_file` is unsafe because a file-backed mapping is only sound
+        // while the underlying file is not truncated or rewritten by another
+        // process for the lifetime of the mapping. The data file is a finished
+        // Hnsw dump opened read-only here, `fsize` was just read from its
+        // metadata, and the resulting `Mmap` is stored in the returned `DataMap`,
+        // which is the sole owner of every slice later handed out by `get_data`.
         let mmap_opt = unsafe { mmap_opt.with_file(&file, offset) };
         let mapping_res = mmap_opt.map();
         if mapping_res.is_err() {
-            error!("Could not memory map : {:?}", &datapath);
+            error!("Could not memory map : {:?}", datapath);
             std::process::exit(1);
         }
         let mmap = mapping_res.unwrap();
         //
-        info!("Mmap done on file : {:?}", &datapath);
+        info!("Mmap done on file : {:?}", datapath);
         //
         // where are we in decoding mmap slice? at beginning
         //
@@ -208,13 +214,18 @@ impl DataMap {
                 &mapped_slice[current_mmap_addr..current_mmap_addr + serialized_len],
             );
             current_mmap_addr += serialized_len;
-            let slice_t =
-                unsafe { std::slice::from_raw_parts(v_serialized.as_ptr() as *const T, dimension) };
-            trace!(
-                "Deserialized v : {:?} address : {:?} ",
-                slice_t,
-                v_serialized.as_ptr() as *const T
-            );
+            // The decoded vector is only needed for tracing: `v_serialized` is a
+            // `Vec<u8>` and may not be aligned for `T`, so it is copied into an
+            // aligned `Vec<T>` rather than reinterpreted in place.
+            if log::log_enabled!(log::Level::Trace) {
+                let values = hnswio::bytes_to_vec::<T>(&v_serialized, dimension)
+                    .map_err(|e| e.to_string())?;
+                trace!(
+                    "Deserialized v : {:?} address : {:?} ",
+                    values,
+                    v_serialized.as_ptr()
+                );
+            }
         } // end of for on record
         //
         debug!("End of DataMap::from_hnsw.");
@@ -287,6 +298,16 @@ impl DataMap {
         let serialized_len = u64::from_ne_bytes(u64_slice) as usize;
         current_mmap_addr += std::mem::size_of::<u64>();
         trace!("Serialized bytes len to reload {:?}", serialized_len);
+        // SAFETY: `address` was recorded by `from_hnswdump` while walking this very
+        // mapping, so `current_mmap_addr` points at the `serialized_len` data bytes of
+        // one record, and `self.dimension * size_of::<T>()` bytes (the size the record
+        // was dumped with, see `hnswio::dump_point`) lie inside the mapping, which is
+        // kept alive by `self` for the returned lifetime `'a`. The bytes are the raw
+        // native-endian values of the type named in the dump header, which the caller
+        // is expected to have matched against `T` with `check_data_type`. Alignment
+        // is not enforced by the file format (each record has a 20-byte header
+        // before its data), so this borrow is only valid for `T` whose alignment
+        // divides the record offsets; `get_data` documents this requirement.
         let slice_t = unsafe {
             std::slice::from_raw_parts(
                 mapped_slice[current_mmap_addr..].as_ptr() as *const T,
@@ -355,7 +376,7 @@ mod tests {
                 xsi = unif.sample(&mut rng);
                 data[j].push(xsi);
             }
-            debug!("j : {:?}, data : {:?} ", j, &data[j]);
+            debug!("j : {:?}, data : {:?} ", j, data[j]);
         }
         // define hnsw
         let ef_construct = 25;
@@ -419,7 +440,7 @@ mod tests {
                 xsi = unif.sample(&mut rng);
                 data[j].push(xsi);
             }
-            debug!("j : {:?}, data : {:?} ", j, &data[j]);
+            debug!("j : {:?}, data : {:?} ", j, data[j]);
         }
         // define hnsw
         let ef_construct = 25;

@@ -1174,15 +1174,11 @@ impl<'b, T: Clone + Send + Sync, D: Distance<T> + Send + Sync> Hnsw<'b, T, D> {
             );
             sorted_points = from_positive_binaryheap_to_negative_binary_heap(&mut sorted_points);
             if !sorted_points.is_empty() {
-                let nb_conn;
-                let extend_c;
-                if l == 0 {
-                    nb_conn = 2 * self.max_nb_connection;
-                    extend_c = self.extend_candidates;
+                let (nb_conn, extend_c) = if l == 0 {
+                    (2 * self.max_nb_connection, self.extend_candidates)
                 } else {
-                    nb_conn = self.max_nb_connection;
-                    extend_c = false;
-                }
+                    (self.max_nb_connection, false)
+                };
                 let mut neighbours = Vec::<Arc<PointWithOrder<T>>>::with_capacity(nb_conn);
                 self.select_neighbours(
                     data,
